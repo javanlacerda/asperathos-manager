@@ -17,7 +17,7 @@ import os
 import shutil
 import socket
 import filecmp
-import etcd3
+import json
 
 from broker.plugins import base as plugin_base
 from broker.persistence.etcd_db import plugin as etcd
@@ -36,12 +36,13 @@ activated_cluster = None
 CLUSTER_CONF_PATH = "./data/clusters"
 
 if api.persistence_name == 'etcd':
-    
+
     persistence_obj = \
         etcd.Etcd3Persistence(api.persistence_ip,
                               api.persistence_port)
 
 submissions = persistence_obj.get_all()
+
 
 def run_submission(data):
     if ('plugin' not in data or 'plugin_info' not in data):
@@ -83,9 +84,8 @@ def terminate_submission(submission_id, data):
 
 
 def submission_errors(submission_id):
-    
-    if submission_id \
-        not in submissions.keys():
+
+    if submission_id not in submissions.keys():
         return None
 
     return submissions[submission_id].errors()
@@ -109,43 +109,26 @@ def end_submission(submission_id, data, hard_finish):
 
 def list_submissions():
     submissions_status = {}
+    print submissions
+    for key in submissions:
 
-    for id in submissions.keys():
-        this_status = {}
-        submissions_status[id] = this_status
+        submission = submissions.get(key)
+        submission.synchronize()
+        submissions_status[key] = \
+            json.loads(submission.__repr__())
 
-        this_status['status'] = (submissions[id].
-                                 get_application_state())
-        this_status['execution_time'] = (submissions[id].
-                                         get_application_execution_time())
-        this_status['start_time'] = (submissions[id].
-                                     get_application_start_time())
-        this_status['visualizer_url'] = (submissions[id].
-                                         get_visualizer_url())
     return submissions_status
 
 
 def submission_status(submission_id):
-    if submission_id not in submissions.keys():
+    if submission_id not in submissions:
         API_LOG.log("Wrong request")
         raise ex.BadRequestException()
 
     # TODO: Update status of application with more informations
 
-    this_status = {}
-    this_status['status'] = (submissions[submission_id].
-                             get_application_state())
-
-    this_status['execution_time'] = (submissions[submission_id].
-                                     get_application_execution_time())
-
-    this_status['start_time'] = (submissions[submission_id].
-                                 get_application_start_time())
-
-    this_status['visualizer_url'] = (submissions[submission_id].
-                                     get_visualizer_url())
-
-    return {submission_id: this_status}
+    return json.loads(submissions.
+                      get(submission_id).__repr__())
 
 
 def submission_log(submission_id):
@@ -481,7 +464,9 @@ def delete_all_submissions(data):
     """
     check_authorization(data)
     persistence_obj.delete_all()
-    submissions = {}
+
+    for key in submissions.keys():
+        delete_submission(key, data)
 
 
 def check_authorization(data):

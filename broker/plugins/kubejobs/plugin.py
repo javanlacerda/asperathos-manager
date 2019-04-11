@@ -30,7 +30,8 @@ from broker.utils.plugins import k8s
 from broker.utils import framework
 
 KUBEJOBS_LOG = logger.Log("KubeJobsPlugin", "logs/kubejobs.log")
-application_time_log = logger.Log("Application_time", "logs/application_time.log")
+application_time_log = \
+    logger.Log("Application_time", "logs/application_time.log")
 
 
 class KubeJobsExecutor(base.GenericApplicationExecutor):
@@ -40,7 +41,7 @@ class KubeJobsExecutor(base.GenericApplicationExecutor):
                  waiting_time=600, job_completed=False,
                  terminated=False,
                  visualizer_url="URL not generated!",
-                 obj_representation = None,
+                 obj_representation=None,
                  persistence_obj=None):
 
         self.id = ids.ID_Generator().get_ID()
@@ -59,7 +60,7 @@ class KubeJobsExecutor(base.GenericApplicationExecutor):
     def __repr__(self):
         return json.dumps({
             "app_id": self.app_id,
-            "starting_time": self.starting_time,
+            "starting_time": str(self.get_application_start_time()),
             "status": self.status,
             "visualizer_url": self.visualizer_url
         })
@@ -165,6 +166,8 @@ class KubeJobsExecutor(base.GenericApplicationExecutor):
                 data['env_vars'],
                 config_id=data["config_id"])
 
+            KUBEJOBS_LOG.log("Job running...")
+            self.update_application_state("ongoing")
             self.starting_time = datetime.datetime.now()
 
             # Starting monitor
@@ -179,17 +182,17 @@ class KubeJobsExecutor(base.GenericApplicationExecutor):
             # 'cpu_agent_port': agent_port})
 
             framework.monitor.start_monitor(api.monitor_url, self.app_id,
-                                  data['monitor_plugin'],
-                                  data['monitor_info'], 2)
+                                            data['monitor_plugin'],
+                                            data['monitor_info'], 2)
 
             # Starting controller
             data.update({'redis_ip': redis_ip, 'redis_port': redis_port})
             framework.controller.start_controller_k8s(api.controller_url,
-                                            self.app_id, data)
+                                                      self.app_id, data)
 
             while not self.job_completed and not self.terminated:
-                self.update_application_state("ongoing")
-                self.job_completed = self.k8s.completed(self.app_id)
+
+                self.synchronize()
                 time.sleep(1)
 
             # Stop monitor, controller and visualizer
@@ -205,7 +208,8 @@ class KubeJobsExecutor(base.GenericApplicationExecutor):
                 framework.visualizer.stop_visualization(
                     api.visualizer_url, self.app_id, data['visualizer_info'])
             framework.monitor.stop_monitor(api.monitor_url, self.app_id)
-            framework.controller.stop_controller(api.controller_url, self.app_id)
+            framework.controller.\
+                stop_controller(api.controller_url, self.app_id)
 
             self.visualizer_url = "Url is dead!"
 
@@ -271,7 +275,30 @@ class KubeJobsExecutor(base.GenericApplicationExecutor):
             self.persist_state()
         except Exception as ex:
             KUBEJOBS_LOG.log(ex)
-            
+
+    def synchronize(self):
+        try:
+            status = self.k8s.get_job_status(self.app_id)
+            if status.active is not None:
+                self.status = "ongoing"
+            else:
+                condition = status.conditions[-1].type
+                if condition == 'Complete':
+                    self.status = "completed"
+                    self.job_completed = True
+
+                elif condition == 'Failed':
+                    self.status = 'failed'
+                    self.terminated = True
+
+        except Exception as ex:
+
+            print ex
+            if self.status == 'ongoing':
+                self.status = 'not found'
+
+            elif self.status == 'created':
+                self.status = 'error'
 
 
 class KubeJobsProvider(base.PluginInterface):

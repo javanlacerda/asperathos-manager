@@ -91,7 +91,7 @@ class TestKubeJobsPlugin(unittest.TestCase):
 
             thread_job1.start()
 
-            next_states_job1 = ["ongoing", "completed"]
+            next_states_job1 = ["created", "ongoing", "completed"]
             while thread_job1.is_alive():
                 current_state = self.job1.get_application_state()
                 if current_state in next_states_job1:
