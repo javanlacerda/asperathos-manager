@@ -440,7 +440,7 @@ def delete_submission(submission_id, data):
     check_authorization(data)
     if submission_id in submissions.keys():
         if submissions[submission_id].get_application_state() in \
-                             ["completed", "terminated", "error"]:
+            ["completed", "terminated", "error", "not found", "failed"]:
             persistence_obj.delete(submission_id)
             del submissions[submission_id]
             API_LOG.log("%s submission deleted from this \

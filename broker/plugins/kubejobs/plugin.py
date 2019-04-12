@@ -40,9 +40,7 @@ class KubeJobsExecutor(base.GenericApplicationExecutor):
                  redis=None, status='created',
                  waiting_time=600, job_completed=False,
                  terminated=False,
-                 visualizer_url="URL not generated!",
-                 obj_representation=None,
-                 persistence_obj=None):
+                 visualizer_url="URL not generated!"):
 
         self.id = ids.ID_Generator().get_ID()
         self.app_id = app_id
@@ -54,8 +52,7 @@ class KubeJobsExecutor(base.GenericApplicationExecutor):
         self.terminated = terminated
         self.visualizer_url = visualizer_url
         self.k8s = k8s
-        self.obj_representation = obj_representation
-        self.persistence_obj = persistence_obj
+        self.persistence_obj = self.setup_persistence()
 
     def __repr__(self):
         return json.dumps({
@@ -71,12 +68,13 @@ class KubeJobsExecutor(base.GenericApplicationExecutor):
                           self.status,
                           self.visualizer_url))
 
+    def setup_persistence(self):
+        if (api.persistence_name == "etcd"):
+                return etcd.Etcd3Persistence(api.persistence_ip,
+                                             api.persistence_port)
+
     def start_application(self, data):
         try:
-            if (api.persistence_name == "etcd"):
-                self.persistence_obj = \
-                    etcd.Etcd3Persistence(api.persistence_ip,
-                                          api.persistence_port)
             self.persist_state()
             # Download files that contains the items
             jobs = requests.get(data['redis_workload']).text.\
@@ -147,6 +145,7 @@ class KubeJobsExecutor(base.GenericApplicationExecutor):
 
                 self.visualizer_url = framework.visualizer.get_visualizer_url(
                     api.visualizer_url, self.app_id)
+                self.persist_state()
 
                 KUBEJOBS_LOG.log(
                     "Dashboard of the job created on: %s" %
@@ -169,7 +168,7 @@ class KubeJobsExecutor(base.GenericApplicationExecutor):
             KUBEJOBS_LOG.log("Job running...")
             self.update_application_state("ongoing")
             self.starting_time = datetime.datetime.now()
-
+            self.persist_state()
             # Starting monitor
             data['monitor_info'].update(
                 {
@@ -248,6 +247,7 @@ class KubeJobsExecutor(base.GenericApplicationExecutor):
 
     def update_application_state(self, state):
         self.status = state
+        self.persist_state()
 
     def terminate_job(self):
         self.k8s.terminate_job(self.app_id)
@@ -263,42 +263,28 @@ class KubeJobsExecutor(base.GenericApplicationExecutor):
             return ()
         return self.rds.lrange("job:errors", 0, -1)
 
-    @set_timeout(0.5)
     def persist_state(self):
-
-        obj_representation = self.__repr__()
-        if self.obj_representation != obj_representation:
-            self.persistence_obj.\
-                put(self.app_id, self)
-            self.obj_representation = obj_representation
-        try:
-            self.persist_state()
-        except Exception as ex:
-            KUBEJOBS_LOG.log(ex)
+        self.persistence_obj.\
+            put(self.app_id, self)
 
     def synchronize(self):
         try:
-            status = self.k8s.get_job_status(self.app_id)
-            if status.active is not None:
-                self.status = "ongoing"
+            current_status = self.k8s.get_job_status(self.app_id)
+            if current_status.active is not None:
+                self.update_application_state("ongoing")
             else:
-                condition = status.conditions[-1].type
+                condition = current_status.conditions[-1].type
                 if condition == 'Complete':
-                    self.status = "completed"
+                    self.update_application_state("completed")
                     self.job_completed = True
-
-                elif condition == 'Failed':
-                    self.status = 'failed'
+                else:
+                    self.update_application_state("failed")
                     self.terminated = True
+        except Exception:
+            if self.status not in \
+                ['completed', 'failed', 'error', 'created']:
+                self.update_application_state('not found')
 
-        except Exception as ex:
-
-            print ex
-            if self.status == 'ongoing':
-                self.status = 'not found'
-
-            elif self.status == 'created':
-                self.status = 'error'
 
 
 class KubeJobsProvider(base.PluginInterface):
