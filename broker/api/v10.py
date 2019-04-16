@@ -177,7 +177,7 @@ def get_activated_cluster():
     return u.render(api.get_activated_cluster())
 
 
-@rest.delete('/submissions/<submission_id>')
+@rest.delete('/submissions/<submission_id>/delete')
 def delete_submission(submission_id, data):
     """ Delete a done submission for the list of
     all submissions
@@ -188,7 +188,7 @@ def delete_submission(submission_id, data):
     return u.render(api.delete_submission(submission_id, data))
 
 
-@rest.delete('/submissions')
+@rest.delete('/submissions/delete')
 def delete_all_submissions(data):
     """ Delete all done submissions from the list of all
     submissions.

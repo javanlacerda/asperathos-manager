@@ -13,14 +13,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import filecmp
+import json
 import os
 import shutil
 import socket
-import filecmp
-import json
 
 from broker.plugins import base as plugin_base
 from broker.persistence.etcd_db import plugin as etcd
+from broker.persistence.sqlite import plugin as sqlite
 from broker.service import api
 from broker.utils.logger import Log
 from broker.utils.framework import authorizer
@@ -35,13 +36,18 @@ activated_cluster = None
 
 CLUSTER_CONF_PATH = "./data/clusters"
 
-if api.persistence_name == 'etcd':
+if api.plugin_name == 'etcd':
 
-    persistence_obj = \
+    db_connector = \
         etcd.Etcd3Persistence(api.persistence_ip,
                               api.persistence_port)
 
-submissions = persistence_obj.get_all()
+elif api.plugin_name == 'sqlite':
+
+    db_connector = \
+        sqlite.SqlitePersistence()
+
+submissions = db_connector.get_all()
 
 
 def run_submission(data):
@@ -86,7 +92,7 @@ def terminate_submission(submission_id, data):
 
 def submission_errors(submission_id):
 
-    if submission_id not in submissions.keys():
+    if submission_id not in submissions:
         return None
 
     return submissions[submission_id].errors()
@@ -96,7 +102,7 @@ def end_submission(submission_id, data, hard_finish):
 
     check_authorization(data)
 
-    if submission_id not in submissions.keys():
+    if submission_id not in submissions:
         API_LOG.log("Wrong request")
         raise ex.BadRequestException()
 
@@ -110,7 +116,6 @@ def end_submission(submission_id, data, hard_finish):
 
 def list_submissions():
     submissions_status = {}
-    print submissions
     for key in submissions:
 
         submission = submissions.get(key)
@@ -133,7 +138,7 @@ def submission_status(submission_id):
 
 
 def submission_log(submission_id):
-    if submission_id not in submissions.keys():
+    if submission_id not in submissions:
         API_LOG.log("Wrong request")
         raise ex.BadRequestException()
 
@@ -169,7 +174,7 @@ def submission_visualizer(submission_id):
         dict -- Returns a dict with 'visualizer_url' as key and the url
             that gives access to the visualizer platform as value.
     """
-    if submission_id not in submissions.keys():
+    if submission_id not in submissions:
         API_LOG.log("Wrong request")
         raise ex.BadRequestException()
 
@@ -438,10 +443,10 @@ def delete_submission(submission_id, data):
         ex.UnauthorizedException -- Authetication problem
     """
     check_authorization(data)
-    if submission_id in submissions.keys():
-        if submissions[submission_id].get_application_state() in \
-            ["completed", "terminated", "error", "not found", "failed"]:
-            persistence_obj.delete(submission_id)
+    if submission_id in submissions:
+        if submissions[submission_id].get_application_state() != "ongoing":
+
+            db_connector.delete(submission_id)
             del submissions[submission_id]
             API_LOG.log("%s submission deleted from this \
                         Asperathos instance!" % (submission_id))
@@ -464,7 +469,7 @@ def delete_all_submissions(data):
         ex.UnauthorizedException -- Authetication problem
     """
     check_authorization(data)
-    persistence_obj.delete_all()
+    db_connector.delete_all()
 
     for key in submissions.keys():
         delete_submission(key, data)

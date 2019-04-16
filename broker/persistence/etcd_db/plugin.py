@@ -23,8 +23,7 @@ class Etcd3Persistence(PersistenceInterface):
 
     def __init__(self, ip, port):
 
-        self.etcd_connection = \
-            etcd3.client(str(ip), str(port))
+        self.etcd_connection = etcd3.client(str(ip), str(port))
 
     def put(self, app_id, state):
         with self.etcd_connection.lock('put', ttl=5):

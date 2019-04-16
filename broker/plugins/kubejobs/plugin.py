@@ -12,18 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import datetime
+import json
 import requests
 import redis
 import threading
 import time
-import datetime
 import uuid
-import json
 
 from broker.service import api
 from broker.plugins import base
 from broker.persistence.etcd_db import plugin as etcd
-from broker.utils.timer import set_timeout
+from broker.persistence.sqlite import plugin as sqlite
 from broker.utils import ids
 from broker.utils import logger
 from broker.utils.plugins import k8s
@@ -52,7 +52,7 @@ class KubeJobsExecutor(base.GenericApplicationExecutor):
         self.terminated = terminated
         self.visualizer_url = visualizer_url
         self.k8s = k8s
-        self.persistence_obj = self.setup_persistence()
+        self.db_connector = self.get_db_connector()
 
     def __repr__(self):
         return json.dumps({
@@ -68,10 +68,13 @@ class KubeJobsExecutor(base.GenericApplicationExecutor):
                           self.status,
                           self.visualizer_url))
 
-    def setup_persistence(self):
-        if (api.persistence_name == "etcd"):
-                return etcd.Etcd3Persistence(api.persistence_ip,
-                                             api.persistence_port)
+    def get_db_connector(self):
+        if (api.plugin_name == "etcd"):
+            return etcd.Etcd3Persistence(api.persistence_ip,
+                                         api.persistence_port)
+
+        elif (api.plugin_name == "sqlite"):
+            return sqlite.SqlitePersistence()
 
     def start_application(self, data):
         try:
@@ -264,16 +267,26 @@ class KubeJobsExecutor(base.GenericApplicationExecutor):
         return self.rds.lrange("job:errors", 0, -1)
 
     def persist_state(self):
-        self.persistence_obj.\
+        self.db_connector.\
             put(self.app_id, self)
 
     def synchronize(self):
+        """ Infer the job state from job status in Kubernetes.
+        If this job is active in Kubernetes, your state is ongoing.
+        If this job isn't active in Kubernetes, he can be completed
+        or failed.
+        If a exception has been throwed, this job not exists, so
+        your state is not found.
+
+        Returns:
+        None -
+        """
         try:
             current_status = self.k8s.get_job_status(self.app_id)
             if current_status.active is not None:
                 self.update_application_state("ongoing")
             else:
-                condition = current_status.conditions[-1].type
+                condition = current_status.conditions.pop().type
                 if condition == 'Complete':
                     self.update_application_state("completed")
                     self.job_completed = True
@@ -281,10 +294,10 @@ class KubeJobsExecutor(base.GenericApplicationExecutor):
                     self.update_application_state("failed")
                     self.terminated = True
         except Exception:
-            if self.status not in \
-                ['completed', 'failed', 'error', 'created']:
-                self.update_application_state('not found')
+            final_states = ['completed', 'failed', 'error', 'created']
+            if self.status not in final_states:
 
+                self.update_application_state('not found')
 
 
 class KubeJobsProvider(base.PluginInterface):

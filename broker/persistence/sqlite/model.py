@@ -1,4 +1,4 @@
-# Copyright (c) 2017 UFCG-LSD.
+# Copyright (c) 2019 UFCG-LSD.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,18 +13,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import threading
-from functools import wraps
+# -*- coding: utf_8 -*-
+import peewee
+from broker.service import api
+
+db = peewee.SqliteDatabase(api.local_database_path)
 
 
-def set_timeout(delay=0.):
-    """
-    Decorator that create a timeout
-    """
-    def wrap(f):
-        @wraps(f)
-        def delayed(*args, **kwargs):
-            timer = threading.Timer(delay, f, args=args, kwargs=kwargs)
-            timer.start()
-        return delayed
-    return wrap
+class JobState(peewee.Model):
+
+    app_id = peewee.CharField(unique=True)
+    obj_serialized = peewee.BlobField()
+
+    class Meta:
+        database = db
