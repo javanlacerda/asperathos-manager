@@ -14,8 +14,9 @@
 
 import datetime
 import json
-import requests
 import redis
+import requests
+import six
 import threading
 import time
 import uuid
@@ -28,6 +29,8 @@ from broker.utils import ids
 from broker.utils import logger
 from broker.utils.plugins import k8s
 from broker.utils import framework
+from broker import exceptions as ex
+
 
 KUBEJOBS_LOG = logger.Log("KubeJobsPlugin", "logs/kubejobs.log")
 application_time_log = \
@@ -79,6 +82,7 @@ class KubeJobsExecutor(base.GenericApplicationExecutor):
     def start_application(self, data):
         try:
             self.persist_state()
+            self.validate(data)
             # Download files that contains the items
             jobs = requests.get(data['redis_workload']).text.\
                 split('\n')[:-1]
@@ -298,6 +302,59 @@ class KubeJobsExecutor(base.GenericApplicationExecutor):
             if self.status not in final_states:
 
                 self.update_application_state('not found')
+
+    def validate(self, data):
+        data_model = {
+            "cmd": list,
+            "control_parameters": dict,
+            "control_plugin": six.string_types,
+            "env_vars": dict,
+            "img": six.string_types,
+            "init_size": int,
+            "monitor_info": dict,
+            "monitor_plugin": six.string_types,
+            "redis_workload": six.string_types,
+            "enable_visualizer": bool
+            # The parameters below are only needed if enable_visualizer is True
+            # "visualizer_plugin": six.string_types
+            # "visualizer_info":dict
+        }
+
+        for key in data_model:
+            if (key not in data):
+                raise ex.BadRequestException(
+                    "Variable \"{}\" is missing".format(key))
+            if (not isinstance(data[key], data_model[key])):
+                raise ex.BadRequestException(
+                    "\"{}\" has unexpected variable type: {}. Was expecting {}"
+                    .format(key, type(data[key]), data_model[key]))
+
+        if (data["enable_visualizer"]):
+            if ("visualizer_plugin" not in data):
+                raise ex.BadRequestException(
+                    "Variable \"visualizer_plugin\" is missing")
+
+            if (not isinstance(data["visualizer_plugin"], six.string_types)):
+                raise ex.BadRequestException(
+                    "\"visualizer_plugin\" has unexpected variable type: {}.\
+                     Was expecting {}"
+                    .format(type(data["visualizer_plugin"]),
+                            data_model["visualizer_plugin"]))
+
+            if ("visualizer_info" not in data):
+                raise ex.BadRequestException(
+                    "Variable \"visualizer_info\" is missing")
+
+            if (not isinstance(data["visualizer_info"], dict)):
+                raise ex.BadRequestException(
+                    "\"visualizer_info\" has unexpected variable type: {}.\
+                    Was expecting {}"
+                    .format(type(data["visualizer_info"]),
+                            data_model["visualizer_info"]))
+
+        if (not data["init_size"] > 0):
+            raise ex.BadRequestException(
+                "Variable \"init_size\" should be greater than 0")
 
 
 class KubeJobsProvider(base.PluginInterface):
