@@ -28,6 +28,13 @@ class Job():
         self.status = Status(active)
 
 
+class Condition():
+
+    def __init__(self):
+
+        self.type = "Complete"
+
+
 class Status():
     """
     Class that represents a mock of the Status object
@@ -43,6 +50,7 @@ class Status():
             Status: The simulation of a Status object
         """
         self.active = active
+        self.conditions = [Condition()]
 
 
 class MockKube():
@@ -141,7 +149,7 @@ class MockKube():
         Returns:
             None
         """
-        self.jobs["default"].pop(app_id)
+        pass
 
     def create_influxdb(app_id, database_name="asperathos",
                         img="influxdb", namespace="default",
@@ -165,4 +173,5 @@ class MockKube():
         Returns:
             None
         """
-        return Status(True)
+        sts = Status(None)
+        return sts

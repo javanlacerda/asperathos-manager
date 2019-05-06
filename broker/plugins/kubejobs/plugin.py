@@ -28,7 +28,7 @@ from broker.persistence.sqlite import plugin as sqlite
 from broker.utils import ids
 from broker.utils import logger
 from broker.utils.plugins import k8s
-from broker.utils import framework
+from broker.utils.framework import monitor, controller, visualizer
 from broker import exceptions as ex
 
 
@@ -147,10 +147,10 @@ class KubeJobsExecutor(base.GenericApplicationExecutor):
                     'username': data['username'],
                     'password': data['password']})
 
-                framework.visualizer.start_visualization(
+                visualizer.start_visualization(
                     api.visualizer_url, self.app_id, data['visualizer_info'])
 
-                self.visualizer_url = framework.visualizer.get_visualizer_url(
+                self.visualizer_url = visualizer.get_visualizer_url(
                     api.visualizer_url, self.app_id)
                 self.persist_state()
 
@@ -187,15 +187,13 @@ class KubeJobsExecutor(base.GenericApplicationExecutor):
                     'enable_visualizer': self.enable_visualizer})  # ,
             # 'cpu_agent_port': agent_port})
 
-            framework.monitor.start_monitor(api.monitor_url, self.app_id,
-                                            data['monitor_plugin'],
-                                            data['monitor_info'], 2)
-
+            monitor.start_monitor(api.monitor_url, self.app_id,
+                                  data['monitor_plugin'],
+                                  data['monitor_info'], 2)
             # Starting controller
             data.update({'redis_ip': redis_ip, 'redis_port': redis_port})
-            framework.controller.start_controller_k8s(api.controller_url,
-                                                      self.app_id, data)
-
+            controller.start_controller_k8s(api.controller_url,
+                                            self.app_id, data)
             while not self.job_completed and not self.terminated:
 
                 self.synchronize()
@@ -209,16 +207,14 @@ class KubeJobsExecutor(base.GenericApplicationExecutor):
             KUBEJOBS_LOG.log("Job finished")
 
             time.sleep(float(self.waiting_time))
-
             if self.enable_visualizer:
-                framework.visualizer.stop_visualization(
+                visualizer.stop_visualization(
                     api.visualizer_url, self.app_id, data['visualizer_info'])
-            framework.monitor.stop_monitor(api.monitor_url, self.app_id)
-            framework.controller.\
+            monitor.stop_monitor(api.monitor_url, self.app_id)
+            controller.\
                 stop_controller(api.controller_url, self.app_id)
 
             self.visualizer_url = "Url is dead!"
-
             KUBEJOBS_LOG.log("Stoped services")
 
             # delete redis resources
