@@ -13,9 +13,15 @@ port =
 plugins = plugin1,plugin2,plugin3
 
 [persistence]
-persistence_name =
+plugin_name =
 persistence_ip =
-persistence_port
+persistence_port = 
+local_database_path =
+
+[kubejobs]
+k8s_conf_path = 
+redis_ip = 
+count_queue = 
 
 [plugin1]
 p1_info1 = 
