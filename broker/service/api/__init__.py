@@ -57,7 +57,7 @@ try:
                                              'local_database_path')
     else:
         plugin_name = 'sqlite'
-        local_database_path = "data/db.db"
+        local_database_path = 'local_database/db.db'
 
     if 'kubejobs' in plugins:
 
