@@ -14,6 +14,7 @@
 # limitations under the License.
 import dill
 import etcd3
+import json
 
 from broker.persistence.persistence_interface import PersistenceInterface
 from broker.persistence.etcd_db.model import Plugin
@@ -83,17 +84,17 @@ class Etcd3PluginPersistence(PersistenceInterface):
 
         with self.etcd_connection.lock('put', ttl=5):
             self.etcd_connection.\
-                put('{}{}'.format(Etcd3PluginPersistence.PLUGIN_PREFIX,
-                                  plugin_name),
-                    plugin_data)
+                put('{}{}-{}'.format(Etcd3PluginPersistence.PLUGIN_PREFIX,
+                                     plugin_name, component),
+                    json.dumps(plugin_data))
 
         return plugin
 
-    def get(self, plugin_name):
+    def get(self, plugin_name, component):
         with self.etcd_connection.lock('get', ttl=5):
             data = self.etcd_connection.\
-                get('{}{}'.format(Etcd3PluginPersistence.PLUGIN_PREFIX,
-                                  plugin_name))[0]
+                get('{}{}-{}'.format(Etcd3PluginPersistence.PLUGIN_PREFIX,
+                                     plugin_name, component))[0]
             return data
 
     def delete(self, plugin_name):
@@ -107,9 +108,13 @@ class Etcd3PluginPersistence(PersistenceInterface):
             self.etcd_connection.\
                 delete_prefix(Etcd3PluginPersistence.PLUGIN_PREFIX)
 
-    def get_all(self, prefix="kj-"):
+    def get_all(self, prefix=PLUGIN_PREFIX):
 
         with self.etcd_connection.lock('getall', ttl=5):
-            plugins = self.etcd_connection.get_prefix(prefix)
+            raw_plugins = self.etcd_connection.get_prefix(prefix)
 
+        plugins = []
+        for p, metadata in raw_plugins:
+            p = json.loads(p)
+            plugins.append(Plugin(**p))
         return plugins
