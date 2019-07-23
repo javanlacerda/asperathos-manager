@@ -346,7 +346,8 @@ class KubeJobsExecutor(base.GenericApplicationExecutor):
                     self.update_application_state("failed")
                     self.terminated = True
         except Exception:
-            final_states = ['completed', 'failed', 'error', 'created','stopped']
+            final_states = ['completed', 'failed', 'error', 'created',
+                            'stopped']
             if self.status not in final_states:
 
                 self.update_application_state('not found')
