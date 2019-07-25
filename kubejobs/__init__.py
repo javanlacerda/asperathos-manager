@@ -309,6 +309,7 @@ class KubeJobsExecutor(base.GenericApplicationExecutor):
 
     def stop_application(self):
         self.rds.delete("job")
+        self.rds.rpush("stop","stop")
 
     def errors(self):
         try:
