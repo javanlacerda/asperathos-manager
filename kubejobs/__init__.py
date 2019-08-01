@@ -77,11 +77,11 @@ class KubeJobsExecutor(base.GenericApplicationExecutor):
 
     def get_db_connector(self):
         if (api.plugin_name == "etcd"):
-            return etcd.Etcd3Persistence(api.persistence_ip,
-                                         api.persistence_port)
+            return etcd.Etcd3JobPersistence(api.persistence_ip,
+                                            api.persistence_port)
 
         elif (api.plugin_name == "sqlite"):
-            return sqlite.SqlitePersistence()
+            return sqlite.SqliteJobPersistence()
 
     def start_application(self, data):
         try:
@@ -309,6 +309,7 @@ class KubeJobsExecutor(base.GenericApplicationExecutor):
 
     def stop_application(self):
         self.rds.delete("job")
+        self.update_application_state("stopped")
 
     def errors(self):
         try:
@@ -345,7 +346,8 @@ class KubeJobsExecutor(base.GenericApplicationExecutor):
                     self.update_application_state("failed")
                     self.terminated = True
         except Exception:
-            final_states = ['completed', 'failed', 'error', 'created']
+            final_states = ['completed', 'failed', 'error', 'created',
+                            'stopped']
             if self.status not in final_states:
 
                 self.update_application_state('not found')
