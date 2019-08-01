@@ -22,6 +22,7 @@ rest = u.Rest('v10', __name__)
 
 CORS(rest, expose_headers='Authorization')
 
+
 @rest.get('/key')
 def get_ssh_key():
     return jsonify(api.get_ssh_key())
