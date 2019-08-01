@@ -33,6 +33,7 @@ API_LOG = Log("APIv10", "logs/APIv10.log")
 clusters = {}
 activated_cluster = None
 
+SSH_KEY_PATH = '/root/.ssh/id_rsa.pub'
 
 CLUSTER_CONF_PATH = "./data/clusters"
 
@@ -72,6 +73,13 @@ def install_plugin(data):
     elif component == plugin_service.Components.CONTROLLER:
         response = plugin_service.install_in_controller(source, plugin_repo)
         return response.json(), response.status_code
+
+
+def get_ssh_key():
+    with open(SSH_KEY_PATH) as f:
+        key = f.read()
+
+    return {"key": key.strip()}
 
 
 def run_submission(data):
