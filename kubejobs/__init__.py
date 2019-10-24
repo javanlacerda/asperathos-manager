@@ -438,30 +438,39 @@ class KubeJobsExecutor(base.GenericApplicationExecutor):
         Returns:
         None -
         """
-        try:
-            current_status = self.k8s.get_job_status(self.app_id)
-            if current_status.active is not None:
-                if self.get_application_state() != 'ongoing':
-                    self.update_application_state("ongoing")
-            else:
-                condition = current_status.conditions.pop().type
-                if condition == 'Complete':
-                    if self.get_application_state() != 'stopped':
-                        self.job_completed = True
-                        self.update_application_state("completed")
+        total_number_of_attempts = 10
+        remaining_attempts = total_number_of_attempts
+        while remaining_attempts > 0:
+            try:
+                current_status = self.k8s.get_job_status(self.app_id)
+                if current_status.active is not None:
+                    if self.get_application_state() != 'ongoing':
+                        self.update_application_state("ongoing")
+                else:
+                    condition = current_status.conditions.pop().type
+                    if condition == 'Complete':
+                        if self.get_application_state() != 'stopped':
+                            self.job_completed = True
+                            self.update_application_state("completed")
+                        else:
+                            self.terminated = True
                     else:
                         self.terminated = True
-                else:
+                        self.update_application_state("failed")
+                return
+            except Exception:
+                if remaining_attempts == 0:
+                    KUBEJOBS_LOG.log("Could not get job status after %d attempts." % total_number_of_attempts)
                     self.terminated = True
-                    self.update_application_state("failed")
-        except Exception:
-            self.terminated = True
-            final_states = ['completed', 'failed',
-                            'error', 'created', 'stopped']
-            if self.status not in final_states:
-
-                self.update_application_state('not found')
-            self.persist_state()
+                    final_states = ['completed', 'failed',
+                                    'error', 'created', 'stopped']
+                    if self.status not in final_states:
+                        self.update_application_state('not found')
+                    self.persist_state()
+                    break
+                KUBEJOBS_LOG.log("Failed to get job status. Trying again.")
+                remaining_attempts -= 1
+                time.sleep(1)
 
     def validate(self, data):
         data_model = {
