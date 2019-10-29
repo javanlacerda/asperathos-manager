@@ -460,7 +460,9 @@ class KubeJobsExecutor(base.GenericApplicationExecutor):
                 return
             except Exception:
                 if remaining_attempts == 0:
-                    KUBEJOBS_LOG.log("Could not get job status after %d attempts." % total_number_of_attempts)
+                    KUBEJOBS_LOG.log(
+                        "Could not get job status after {} attempts."
+                        .format(total_number_of_attempts))
                     self.terminated = True
                     final_states = ['completed', 'failed',
                                     'error', 'created', 'stopped']
