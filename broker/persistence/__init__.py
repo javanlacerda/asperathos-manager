@@ -1,10 +1,17 @@
 BASIC_PLUGINS = [
+        # {
+        #     "name": "kubejobs",
+        #     "source": "",
+        #     "component": "manager",
+        #     "plugin_source": "",
+        #     "module": "kubejobs"
+        # },
         {
-            "name": "kubejobs",
+            "name": "kubeapps",
             "source": "",
             "component": "manager",
             "plugin_source": "",
-            "module": "kubejobs"
+            "module": "kubeapps"
         },
         {
             "name": "kubejobs",

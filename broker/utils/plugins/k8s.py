@@ -103,6 +103,68 @@ def create_job(app_id, cmd, img, init_size, env_vars,
 
     return job
 
+def create_deployment(app_id, app_port, img):
+    kube.config.load_kube_config(api.k8s_conf_path)
+    kube_api = kube.client.AppsV1beta1Api()
+    
+    container = kube.client.V1Container(
+        name=app_id,
+        image= img,
+        ports=[kube.client.V1ContainerPort(container_port=app_port)])
+
+    template = kube.client.V1PodTemplateSpec(
+        metadata=kube.client.V1ObjectMeta(labels={"app": app_id}),
+        spec=kube.client.V1PodSpec(containers=[container]))
+    spec = kube.client.AppsV1beta1DeploymentSpec(
+        replicas=1,
+        template=template)
+    deployment = kube.client.AppsV1beta1Deployment(
+        api_version="apps/v1beta1",
+        kind="Deployment",
+        metadata=kube.client.V1ObjectMeta(name=app_id),
+        spec=spec)
+
+    print('Creating deploy...')
+    api_response = kube_api.create_namespaced_deployment(
+        body=deployment,
+        namespace="default")
+
+def create_service(app_id, port):
+        api = kube.client.CoreV1Api()
+        
+        svc_spec = {
+        "apiVersion": "v1",
+        "kind": "Service",
+        "metadata": {
+            "name": app_id,
+            "labels": {
+                "app": app_id
+            }
+        },
+        "spec": {
+            "ports": [{
+                "protocol": "TCP",
+                "port": port,
+                "targetPort": port
+            }],
+            "selector": {
+                "app": app_id
+            },
+            "type": "LoadBalancer"
+        }
+        }
+        print('Creating service...')
+        api.create_namespaced_service(namespace='default', body=svc_spec)
+
+
+def deploy_app(kwargs):
+    
+    app_id = kwargs.get('app_id')
+    app_port = kwargs.get('port')
+    img = kwargs.get('img')
+    create_deployment(app_id, app_port, img)
+    create_service(app_id, app_port)
+
 
 def provision_redis_or_die(app_id, namespace="default",
                            redis_port=6379, timeout=60):

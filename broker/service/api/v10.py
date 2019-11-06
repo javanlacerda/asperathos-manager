@@ -159,7 +159,6 @@ def run_submission(data):
     if ('plugin' not in data or 'plugin_info' not in data):
         API_LOG.log("Missing plugin fields in request")
         raise ex.BadRequestException("Missing plugin fields in request")
-
     if data['enable_auth']:
         if ('username' not in data or 'password' not in data):
             API_LOG.log("Missing plugin fields in request")
