@@ -39,83 +39,28 @@ application_time_log = \
 
 class KubeAppsExecutor(base.GenericApplicationExecutor):
 
-    def __init__(self, app_id, starting_time=None,
-                 redis=None, status='created',
-                 job_completed=False,
-                 terminated=False,
-                 visualizer_url="URL not generated!",
-                 enable_visualizer=False,
-                 data=None, enable_detailed_report=False,
-                 job_resources_lifetime=0, report={},
-                 del_resources_authorization=False, finish_time=None,
-                 redis_ip=None, redis_port=None):
+    def __init__(self, app_id,
+                 data=None, url_address=None):
 
-        self.job_resources_lifetime = job_resources_lifetime
         self.id = ids.ID_Generator().get_ID()
         self.app_id = app_id
-        self.starting_time = starting_time
-        self.rds = redis
-        self.redis_ip = redis_ip
-        self.redis_port = redis_port
-        self.status = status
-        self.job_completed = job_completed
-        self.terminated = terminated
-        self.visualizer_url = visualizer_url
         self.k8s = k8s
-        self.db_connector = self.get_db_connector()
-        self.enable_visualizer = enable_visualizer
-        self.enable_detailed_report = enable_detailed_report
-        self.report = report
         self.data = data
-        self.finish_time = finish_time
-        self.del_resources_authorization = del_resources_authorization
+        self.url_address = url_address
 
     def __repr__(self):
 
         representation = {
             "app_id": self.app_id,
-            "starting_time": str(self.get_application_start_time()),
-            "status": self.status,
-            "visualizer_url": self.visualizer_url,
-            "redis_ip": self.redis_ip,
-            "redis_port": self.redis_port
+            "url_address": self.url_address
         }
-
-        representation.update(self.report)
         return json.dumps(representation)
-
-    def __reduce__(self):
-        return (rebuild, (self.app_id,
-                          self.starting_time,
-                          self.status,
-                          self.visualizer_url,
-                          self.data,
-                          self.report,
-                          self.del_resources_authorization,
-                          self.finish_time,
-                          self.job_resources_lifetime,
-                          self.terminated,
-                          self.job_completed,
-                          self.enable_visualizer,
-                          self.redis_ip,
-                          self.redis_port))
-
-    def get_db_connector(self):
-        if (api.plugin_name == "etcd"):
-            return etcd.Etcd3JobPersistence(api.persistence_ip,
-                                            api.persistence_port)
-
-        elif (api.plugin_name == "sqlite"):
-            return sqlite.SqliteJobPersistence()
-
 
     def start_application(self, data):
         data.update({'app_id': self.app_id})
-        k8s.deploy_app(data)
-
-    def add_redis_info_to_data(self):
-        self.data.update({'redis_ip': self.redis_ip,
-                          'redis_port': self.redis_port})
+        self.activate_related_cluster(data)
+        self.update_env_vars(data)
+        self.url_address = k8s.deploy_app(data)
 
     def activate_related_cluster(self, data):
         # If the cluster name is informed in data, active the cluster
@@ -134,241 +79,8 @@ class KubeAppsExecutor(base.GenericApplicationExecutor):
                              "is deprecated.")
             data['env_vars']['SCONE_CONFIG_ID'] = config_id
 
-    def setup_redis(self):
-        # Provision a redis database for the job. Die in case of error.
-        self.redis_ip, self.redis_port = \
-            self.k8s.provision_redis_or_die(self.app_id)
-
-        # create a new Redis client and fill the work queue
-        if(self.rds is None):
-            self.rds = redis.StrictRedis(host=self.redis_ip,
-                                         port=self.redis_port)
-
-    def setup_metric_persistence(self, data):
-
-        datasource_type = data['visualizer_info']['datasource_type']
-        database_data = self.setup_datasource(datasource_type)
-
-        return database_data, datasource_type
-
-    def setup_datasource(self, datasource_type):
-        if datasource_type == "influxdb":
-            database_data = self.k8s.create_influxdb(self.app_id)
-
-        return database_data
-
-    def update_visualizer_info(self, data, database_data, redis_ip):
-
-        database_data.update({"url": redis_ip})
-        data['visualizer_info'].\
-            update({'database_data': database_data,
-                    'enable_visualizer': data['enable_visualizer'],
-                    'plugin': data['monitor_plugin'],
-                    'visualizer_plugin': data['visualizer_plugin'],
-                    'username': data['username'],
-                    'password': data['password']})
-
-    def update_monitor_info(self, database_data,
-                            datasource_type, queue_size):
-
-        schedule_strategy, heuristic_options = \
-            self._get_control_parameters()
-
-        self.data['monitor_info'].\
-            update({'database_data': database_data,
-                    'datasource_type': datasource_type,
-                    # 'number_of_jobs': queue_size,
-                    'submission_time': self.starting_time.
-                    strftime('%Y-%m-%dT%H:%M:%S.%fGMT'),
-                    'redis_ip': self.redis_ip,
-                    'redis_port': self.redis_port,
-                    # 'enable_visualizer': self.enable_visualizer,
-                    # 'enable_detailed_report': self.enable_detailed_report,
-                    'scaling_strategy': schedule_strategy,
-                    'heuristic_options': heuristic_options
-                    })
-        # 'cpu_agent_port': agent_port})
-
-    def _get_control_parameters(self):
-
-        control_parameters = self.data['control_parameters']
-        schedule_strategy = 'default'
-        heuristic_options = None
-        if 'schedule_strategy' in control_parameters:
-            schedule_strategy = control_parameters['schedule_strategy']
-
-        if 'heuristic_options' in control_parameters:
-            heuristic_options = control_parameters['heuristic_options']
-
-        return schedule_strategy, heuristic_options
-
-    def start_visualization(self, data):
-        self.enable_visualizer = data['enable_visualizer']
-        if self.enable_visualizer:
-            visualizer.start_visualization(
-                api.visualizer_url, self.app_id, data['visualizer_info'])
-
-            self.visualizer_url = visualizer.get_visualizer_url(
-                        api.visualizer_url, self.app_id)
-
-            KUBEAPPS_LOG.log(
-                "Dashboard of the job created on: %s" %
-                (self.visualizer_url))
-
-    # deploy_app ?
-    def trigger_job(self, data):
-        KUBEAPPS_LOG.log("Creating Job")
-        termination_grace = data.get('termination_grace_period_seconds',
-                                     30)
-        kwargs = {
-            'app_id': self.app_id,
-            'cmd': data['cmd'],
-            'img': data['img'],
-            'init_size': data['init_size'],
-            'env_vars': data['env_vars'],
-            'config_id': data.get('config_id'),
-            'job_termination_grace_period_seconds': termination_grace
-        }
-
-        if data.get("k8s_resources_control"):
-            kwargs.update({
-                "limits": data["k8s_resources_control"]['limits'],
-                "requests": data["k8s_resources_control"]['requests']
-                           })
-
-        self.k8s.create_job(**kwargs)
-
-        KUBEAPPS_LOG.log("Job running...")
-        self.update_application_state("ongoing")
-        self.starting_time = datetime.datetime.now()
-
-    def start_monitoring(self, data, collect_period=1):
-        monitor.start_monitor(api.monitor_url, self.app_id,
-                              data['monitor_plugin'],
-                              data['monitor_info'], collect_period)
-
-    def start_controlling(self, data):
-        controller.start_controller_k8s(api.controller_url,
-                                        self.app_id, data)
-
-
-    def set_job_resources_lifetime(self):
-        if "job_resources_lifetime" in self.data:
-            try:
-                self.job_resources_lifetime = \
-                    int(self.data["job_resources_lifetime"])
-
-            except Exception:
-                KUBEAPPS_LOG.log("The variable 'job_resources_lifetime' "
-                                 "must be int! The default value 0 has "
-                                 "been setted for this job!")
-
-    def schedule_resources_deletion(self):
-        if self.job_resources_lifetime > 0:
-            api.v10.job_cleaner_svc.\
-                insert_element(self.app_id, self.job_resources_lifetime)
-        else:
-            self.delete_job_resources()
-
-    def delete_job_resources(self):
-        try:
-            if self.enable_visualizer:
-                visualizer.stop_visualization(api.visualizer_url,
-                                              self.app_id,
-                                              self.data['visualizer_info'])
-
-            monitor.stop_monitor(api.monitor_url, self.app_id)
-            controller.stop_controller(api.controller_url,
-                                       self.app_id)
-
-            self.visualizer_url = "Url is dead!"
-            KUBEAPPS_LOG.log("Stoped services")
-
-            # delete redis resources
-            if not self.get_application_state() == 'terminated':
-                self.k8s.terminate_job(self.app_id)
-        except Exception:
-            KUBEAPPS_LOG.log("Job " + self.app_id +
-                             " resources already deleted!")
-        self.del_resources_authorization = False
-        self.persist_state()
-
-    def get_application_state(self):
-        return self.status
-
-    def get_visualizer_url(self):
-        return self.visualizer_url
-
-    def get_application_start_time(self):
-        if(self.starting_time is not None):
-            return self.starting_time.strftime('%Y-%m-%dT%H:%M:%S.%fGMT')
-        else:
-            return "Job is not running yet!"
-
-    def update_application_state(self, state):
-        self.status = state
-        self.persist_state()
-
-    def terminate_job(self):
-        self.k8s.terminate_job(self.app_id)
-        self.update_application_state("terminated")
-        self.finish_time = datetime.datetime.now()
-        self.del_resources_authorization = True
-
-    def stop_application(self):
-        self.rds.delete("job")
-        self.rds.rpush("stop", "stop")
-        self.finish_time = datetime.datetime.now()
-        self.del_resources_authorization = True
-        self.terminated = True
-        self.update_application_state("stopped")
-
-    def errors(self):
-        try:
-            self.rds.ping()
-        except redis.exceptions.ConnectionError:
-            return ()
-        return self.rds.lrange("job:errors", 0, -1)
-
-    def persist_state(self):
-        self.db_connector.\
-            put(self.app_id, self)
-
     def synchronize(self):
-        """ Infer the job state from job status in Kubernetes.
-        If a job is active in Kubernetes, its state is 'ongoing'.
-        If a job is not active in Kubernetes, it can be
-        'completed' or 'failed'.
-        If an exception has been thrown, the job does not exist,
-        so its state is 'not found'.
-
-        Returns:
-        None -
-        """
-        try:
-            current_status = self.k8s.get_job_status(self.app_id)
-            if current_status.active is not None:
-                if self.get_application_state() != 'ongoing':
-                    self.update_application_state("ongoing")
-            else:
-                condition = current_status.conditions.pop().type
-                if condition == 'Complete':
-                    if self.get_application_state() != 'stopped':
-                        self.job_completed = True
-                        self.update_application_state("completed")
-                    else:
-                        self.terminated = True
-                else:
-                    self.terminated = True
-                    self.update_application_state("failed")
-        except Exception:
-            self.terminated = True
-            final_states = ['completed', 'failed',
-                            'error', 'created', 'stopped']
-            if self.status not in final_states:
-
-                self.update_application_state('not found')
-            self.persist_state()
+        pass
 
     def validate(self, data):
         data_model = {
@@ -430,7 +142,7 @@ class KubeAppsProvider(base.PluginInterface):
         self.id_generator = ids.ID_Generator()
 
     def get_title(self):
-        return 'Kubernetes Batch Jobs Plugin'
+        return 'Kubernetes App Deploy Plugin'
 
     def get_description(self):
         return ('Plugin that allows utilization of '
@@ -451,31 +163,5 @@ class KubeAppsProvider(base.PluginInterface):
                                            args=(data,))
         handling_thread.start()
         return app_id, executor
-
-
-def rebuild(app_id, starting_time,
-            status, visualizer_url,
-            data, report,
-            del_resources_auth, finish_time,
-            job_resources_lifetime,
-            terminated, job_completed,
-            enable_visualizer, redis_ip, redis_port):
-
-    obj = KubeAppsExecutor(app_id=app_id,
-                           starting_time=starting_time,
-                           status=status,
-                           visualizer_url=visualizer_url,
-                           data=data,
-                           report=report,
-                           del_resources_authorization=del_resources_auth,
-                           finish_time=finish_time,
-                           job_resources_lifetime=job_resources_lifetime,
-                           terminated=terminated,
-                           job_completed=job_completed,
-                           enable_visualizer=enable_visualizer,
-                           redis_ip=redis_ip,
-                           redis_port=redis_port)
-    return obj
-
 
 PLUGIN = KubeAppsProvider

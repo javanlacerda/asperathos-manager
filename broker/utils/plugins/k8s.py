@@ -16,6 +16,7 @@ import time
 
 import kubernetes as kube
 import redis
+import requests
 
 from broker.service import api
 from influxdb import InfluxDBClient
@@ -103,20 +104,54 @@ def create_job(app_id, cmd, img, init_size, env_vars,
 
     return job
 
-def create_deployment(app_id, app_port, img):
+def create_deployment(app_id, app_port, img,
+                      init_size, env_vars, isgx="dev-isgx",
+                      devisgx="/dev/isgx"):
+
     kube.config.load_kube_config(api.k8s_conf_path)
     kube_api = kube.client.AppsV1beta1Api()
-    
-    container = kube.client.V1Container(
+
+    obj_meta = kube.client.V1ObjectMeta(
+        name=app_id)
+
+    envs = []
+
+    for key in env_vars.keys():
+
+        var = kube.client.V1EnvVar(
+                name=key,
+                value=env_vars[key])
+        envs.append(var)
+
+    isgx = kube.client.V1VolumeMount(
+        mount_path="/dev/isgx",
+        name=isgx
+    )
+
+    devisgx = kube.client.V1Volume(
+        name="dev-isgx",
+        host_path=kube.client.V1HostPathVolumeSource(
+            path=devisgx
+        )
+    )
+    container_spec = kube.client.V1Container(
         name=app_id,
         image= img,
+        env=envs,
+        volume_mounts=[isgx],
         ports=[kube.client.V1ContainerPort(container_port=app_port)])
+
+    pod_spec = kube.client.V1PodSpec(
+        containers=[container_spec],
+        restart_policy="Always",
+        volumes=[devisgx])
 
     template = kube.client.V1PodTemplateSpec(
         metadata=kube.client.V1ObjectMeta(labels={"app": app_id}),
-        spec=kube.client.V1PodSpec(containers=[container]))
+        spec=pod_spec)
+    
     spec = kube.client.AppsV1beta1DeploymentSpec(
-        replicas=1,
+        replicas=init_size,
         template=template)
     deployment = kube.client.AppsV1beta1Deployment(
         api_version="apps/v1beta1",
@@ -130,7 +165,7 @@ def create_deployment(app_id, app_port, img):
         namespace="default")
 
 def create_service(app_id, port):
-        api = kube.client.CoreV1Api()
+        kube_api = kube.client.CoreV1Api()
         
         svc_spec = {
         "apiVersion": "v1",
@@ -154,16 +189,47 @@ def create_service(app_id, port):
         }
         }
         print('Creating service...')
-        api.create_namespaced_service(namespace='default', body=svc_spec)
+        s = kube_api.create_namespaced_service(namespace='default', body=svc_spec)
+        node_port = s.spec.ports[0].node_port
+        node_ip = api.get_node_cluster(api.k8s_conf_path)
 
+        return node_ip, node_port
+    
+def wait_deployment_ready(app_id):
 
+    kube_api = kube.client.AppsV1Api()
+    ready = False
+    while not ready:
+        s = kube_api.read_namespaced_deployment(name=app_id, namespace='default')
+        ready_replicas = s.status.ready_replicas
+        ready = ready_replicas > 0
+        time.sleep(2)
+
+def wait_application_ready(url):
+
+    ready = False
+    while not ready:
+        try:
+            requests.get(url)
+            ready = True
+        except Exception:
+            print('Trying connect to app again...')
+            time.sleep(2)
+        
 def deploy_app(kwargs):
     
     app_id = kwargs.get('app_id')
     app_port = kwargs.get('port')
     img = kwargs.get('img')
-    create_deployment(app_id, app_port, img)
-    create_service(app_id, app_port)
+    init_size = kwargs.get('init_size')
+    env_vars = kwargs.get('env_vars')
+    create_deployment(app_id, app_port, img, init_size, env_vars)
+    wait_deployment_ready(app_id)
+    node_ip, node_port = create_service(app_id, app_port)
+    url = "http://{}:{}".format(node_ip, node_port)
+    wait_application_ready(url)
+
+    return url
 
 
 def provision_redis_or_die(app_id, namespace="default",
