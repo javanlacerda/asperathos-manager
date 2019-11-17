@@ -106,7 +106,7 @@ def create_job(app_id, cmd, img, init_size, env_vars,
 
 def create_deployment(app_id, app_port, img,
                       init_size, env_vars, isgx="dev-isgx",
-                      devisgx="/dev/isgx", cmd=None):
+                      devisgx="/dev/isgx", cmd=None, args=None):
 
     kube.config.load_kube_config(api.k8s_conf_path)
     kube_api = kube.client.AppsV1beta1Api()
@@ -137,6 +137,7 @@ def create_deployment(app_id, app_port, img,
     container_spec = kube.client.V1Container(
         name=app_id,
         command=cmd,
+        args=args,
         image= img,
         env=envs,
         volume_mounts=[isgx],
@@ -230,9 +231,10 @@ def deploy_app_from_image(app_id, app_port, img, init_size, env_vars):
 def deploy_app_from_git(app_id, app_port, git_address, init_size, env_vars):
     
     img = 'ubuntu'
-    cmd = ['git', 'clone', git_address.strip(), 'application', '&&', 'cd', 'application', '&&', 'bash', 'run.sh']
+    cmd = ["/bin/bash","-c"]
+    args = ['apt update -y && apt install git -y && git clone {} application && cd application && ./run.sh'.format(git_address)]
 
-    create_deployment(app_id, app_port, img, init_size, env_vars, cmd=cmd)
+    create_deployment(app_id, app_port, img, init_size, env_vars, cmd=cmd, args=args)
     wait_deployment_ready(app_id)
     node_ip, node_port = create_service(app_id, app_port)
     url = "http://{}:{}".format(node_ip, node_port)

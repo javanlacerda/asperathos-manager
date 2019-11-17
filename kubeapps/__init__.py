@@ -63,8 +63,8 @@ class KubeAppsExecutor(base.GenericApplicationExecutor):
         self.activate_related_cluster(data)
         self.update_env_vars(data)
 
-        app_port, code_source, init_size, env_vars = self.get_args(data)
-        if source_code.lower() == 'git':
+        app_port, code_from, init_size, env_vars = self.get_args(data)
+        if code_from.lower() == 'git':
             git_address = data.get('git_address')
             self.url_address = \
                 k8s.deploy_app_from_git(self.app_id, app_port,
@@ -78,11 +78,11 @@ class KubeAppsExecutor(base.GenericApplicationExecutor):
     def get_args(self, kwargs):
         
         app_port = kwargs.get('port')
-        source_code = kwargs.get('source_code')
+        code_from = kwargs.get('code_from')
         init_size = kwargs.get('init_size')
         env_vars = kwargs.get('env_vars')
 
-        return app_port, source_code, init_size, env_vars
+        return app_port, code_from, init_size, env_vars
 
     def activate_related_cluster(self, data):
         # If the cluster name is informed in data, active the cluster
