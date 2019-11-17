@@ -40,7 +40,7 @@ application_time_log = \
 class KubeAppsExecutor(base.GenericApplicationExecutor):
 
     def __init__(self, app_id,
-                 data=None, url_address=None):
+                 data=None, url_address='Url is not avaliable yet!'):
 
         self.id = ids.ID_Generator().get_ID()
         self.app_id = app_id
@@ -57,10 +57,32 @@ class KubeAppsExecutor(base.GenericApplicationExecutor):
         return json.dumps(representation)
 
     def start_application(self, data):
+        
+        # TODO: Validate data entry
         data.update({'app_id': self.app_id})
         self.activate_related_cluster(data)
         self.update_env_vars(data)
-        self.url_address = k8s.deploy_app(data)
+
+        app_port, code_source, init_size, env_vars = self.get_args(data)
+        if source_code.lower() == 'git':
+            git_address = data.get('git_address')
+            self.url_address = \
+                k8s.deploy_app_from_git(self.app_id, app_port,
+                                          git_address, init_size, env_vars)
+        else:
+            img = data.get('img')
+            self.url_address = \
+                k8s.deploy_app_from_image(self.app_id, app_port,
+                                          img, init_size, env_vars)
+
+    def get_args(self, kwargs):
+        
+        app_port = kwargs.get('port')
+        source_code = kwargs.get('source_code')
+        init_size = kwargs.get('init_size')
+        env_vars = kwargs.get('env_vars')
+
+        return app_port, source_code, init_size, env_vars
 
     def activate_related_cluster(self, data):
         # If the cluster name is informed in data, active the cluster

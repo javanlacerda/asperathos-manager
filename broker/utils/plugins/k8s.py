@@ -106,7 +106,7 @@ def create_job(app_id, cmd, img, init_size, env_vars,
 
 def create_deployment(app_id, app_port, img,
                       init_size, env_vars, isgx="dev-isgx",
-                      devisgx="/dev/isgx"):
+                      devisgx="/dev/isgx", cmd=None):
 
     kube.config.load_kube_config(api.k8s_conf_path)
     kube_api = kube.client.AppsV1beta1Api()
@@ -136,6 +136,7 @@ def create_deployment(app_id, app_port, img,
     )
     container_spec = kube.client.V1Container(
         name=app_id,
+        command=cmd,
         image= img,
         env=envs,
         volume_mounts=[isgx],
@@ -216,13 +217,8 @@ def wait_application_ready(url):
             print('Trying connect to app again...')
             time.sleep(2)
         
-def deploy_app(kwargs):
+def deploy_app_from_image(app_id, app_port, img, init_size, env_vars):
     
-    app_id = kwargs.get('app_id')
-    app_port = kwargs.get('port')
-    img = kwargs.get('img')
-    init_size = kwargs.get('init_size')
-    env_vars = kwargs.get('env_vars')
     create_deployment(app_id, app_port, img, init_size, env_vars)
     wait_deployment_ready(app_id)
     node_ip, node_port = create_service(app_id, app_port)
@@ -230,6 +226,20 @@ def deploy_app(kwargs):
     wait_application_ready(url)
 
     return url
+
+def deploy_app_from_git(app_id, app_port, git_address, init_size, env_vars):
+    
+    img = 'ubuntu'
+    cmd = ['git', 'clone', git_address.strip(), 'application', '&&', 'cd', 'application', '&&', 'bash', 'run.sh']
+
+    create_deployment(app_id, app_port, img, init_size, env_vars, cmd=cmd)
+    wait_deployment_ready(app_id)
+    node_ip, node_port = create_service(app_id, app_port)
+    url = "http://{}:{}".format(node_ip, node_port)
+    wait_application_ready(url)
+
+    return url
+
 
 
 def provision_redis_or_die(app_id, namespace="default",
