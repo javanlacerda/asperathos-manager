@@ -193,7 +193,7 @@ def create_service(app_id, port):
         print('Creating service...')
         s = kube_api.create_namespaced_service(namespace='default', body=svc_spec)
         node_port = s.spec.ports[0].node_port
-        node_ip = api.get_node_cluster(api.k8s_conf_path)
+        node_ip = s.spec.cluster_ip
 
         return node_ip, node_port
     
@@ -227,6 +227,17 @@ def deploy_app_from_image(app_id, app_port, img, init_size, env_vars):
     wait_application_ready(url)
 
     return url
+
+def stop_app(app_id):
+    kube.config.load_kube_config(api.k8s_conf_path)
+    kube_api = kube.client.AppsV1Api()
+    deployment = kube_api.read_namespaced_deployment(name=app_id, namespace='default')
+    deployment.spec.replicas = 0
+    api_response = kube_api.patch_namespaced_deployment(
+        name=app_id,
+        namespace="default",
+        body=deployment)
+    return "stopped"
 
 def deploy_app_from_git(app_id, app_port, git_address, init_size, env_vars):
     
