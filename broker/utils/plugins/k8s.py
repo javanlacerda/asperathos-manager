@@ -228,6 +228,26 @@ def deploy_app_from_image(app_id, app_port, img, init_size, env_vars):
 
     return url
 
+def terminate_app(app_id):
+        kube.config.load_kube_config(api.k8s_conf_path)
+        ## Deleting deployment
+        kube_api = kube.client.AppsV1Api()
+        kube_api.delete_namespaced_deployment(
+        name=app_id,
+        namespace="default",
+        body=kube.client.V1DeleteOptions(
+            propagation_policy='Foreground',
+            grace_period_seconds=5))
+        ## Deleting service.
+        kube_api = kube.client.CoreV1Api()
+        kube_api.delete_namespaced_service(
+        name=app_id,
+        namespace="default",
+        body=kube.client.V1DeleteOptions(
+            propagation_policy='Foreground',
+            grace_period_seconds=5))
+
+
 def stop_app(app_id):
     kube.config.load_kube_config(api.k8s_conf_path)
     kube_api = kube.client.AppsV1Api()

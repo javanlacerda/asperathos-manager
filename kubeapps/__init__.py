@@ -77,6 +77,11 @@ class KubeAppsExecutor(base.GenericApplicationExecutor):
     def stop_application(self):
         # TODO: Validate data entry
         self.url_address = k8s.stop_app(self.app_id)
+        
+    def terminate_job(self):
+        # TODO: Validate data entry
+        k8s.terminate_app(self.app_id)
+        self.url_address = "terminated!"
 
     def get_args(self, kwargs):
         
