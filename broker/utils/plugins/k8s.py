@@ -229,6 +229,7 @@ def deploy_app_from_image(app_id, app_port, img, init_size, env_vars):
     return url
 
 def terminate_app(app_id):
+        print("terminating submission {}...".format(app_id))
         kube.config.load_kube_config(api.k8s_conf_path)
         ## Deleting deployment
         kube_api = kube.client.AppsV1Api()
@@ -238,6 +239,7 @@ def terminate_app(app_id):
         body=kube.client.V1DeleteOptions(
             propagation_policy='Foreground',
             grace_period_seconds=5))
+        print("{} deployment deleted...".format(app_id))
         ## Deleting service.
         kube_api = kube.client.CoreV1Api()
         kube_api.delete_namespaced_service(
@@ -246,17 +248,20 @@ def terminate_app(app_id):
         body=kube.client.V1DeleteOptions(
             propagation_policy='Foreground',
             grace_period_seconds=5))
+        print("{} service deleted...".format(app_id))
 
 
-def stop_app(app_id):
+def update_app(app_id, replicas):
+    print("updating submission {} to {} replicas...".format(app_id, replicas))
     kube.config.load_kube_config(api.k8s_conf_path)
     kube_api = kube.client.AppsV1Api()
     deployment = kube_api.read_namespaced_deployment(name=app_id, namespace='default')
-    deployment.spec.replicas = 0
+    deployment.spec.replicas = replicas
     api_response = kube_api.patch_namespaced_deployment(
         name=app_id,
         namespace="default",
         body=deployment)
+    print("updated {} successfuly...".format(app_id))
     return "stopped"
 
 def deploy_app_from_git(app_id, app_port, git_address, init_size, env_vars):

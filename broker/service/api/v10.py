@@ -195,7 +195,12 @@ def stop_submission(submission_id, data):
 def terminate_submission(submission_id, data):
     return end_submission(submission_id, data, True)
 
-
+def update_submission(submission_id, data):
+    if submission_id not in submissions or "num_replicas" not in data.keys():
+        API_LOG.log("Wrong request")
+        raise ex.BadRequestException()
+    return submissions[submission_id].update_aplication(data)
+    
 def submission_errors(submission_id):
 
     if submission_id not in submissions:
