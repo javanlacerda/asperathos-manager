@@ -280,6 +280,7 @@ def deploy_app_from_git(app_id, app_port, git_address,
     return url
 
 
+
 def provision_redis_or_die(app_id, namespace="default",
                            redis_port=6379, timeout=60):
     """Provision a redis database for the workload being executed.

@@ -57,8 +57,6 @@ class KubeAppsExecutor(base.GenericApplicationExecutor):
         return json.dumps(representation)
 
     def start_application(self, data):
-        
-        # TODO: Validate data entry
         data.update({'app_id': self.app_id})
         self.activate_related_cluster(data)
         self.update_env_vars(data)
@@ -76,6 +74,16 @@ class KubeAppsExecutor(base.GenericApplicationExecutor):
             self.url_address = \
                 k8s.deploy_app_from_image(self.app_id, app_port,
                                           img, init_size, env_vars)
+
+    def stop_application(self):
+        self.url_address = k8s.update_app(self.app_id, 0)
+        
+    def terminate_job(self):
+        k8s.terminate_app(self.app_id)
+        self.url_address = "terminated!"
+
+    def update_aplication(self, data):
+        k8s.update_app(self.app_id, data["num_replicas"])
 
     def get_args(self, kwargs):
         

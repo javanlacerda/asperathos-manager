@@ -58,6 +58,15 @@ def stop_submission(submission_id, data):
     """
     return u.render(api.stop_submission(submission_id, data))
 
+@rest.put('/submissions/<submission_id>/update')
+def update_submission(submission_id, data):
+    """ update a running submission.
+    Updatable params: Number of replicas
+
+    Normal response codes: 204
+    Error response codes: 400, 401
+    """
+    return u.render(api.update_submission(submission_id, data))
 
 @rest.put('/submissions/<submission_id>/terminate')
 def terminate_submission(submission_id, data):
