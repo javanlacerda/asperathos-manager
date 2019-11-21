@@ -63,10 +63,12 @@ class KubeAppsExecutor(base.GenericApplicationExecutor):
 
         app_port, code_from, init_size, env_vars = self.get_args(data)
         if code_from.lower() == 'git':
-            git_address = data.get('git_address')
+            git_address = data.get('git_address').strip()
+            branch = data.get('branch').strip()
             self.url_address = \
                 k8s.deploy_app_from_git(self.app_id, app_port,
-                                          git_address, init_size, env_vars)
+                                        git_address, init_size,
+                                        env_vars, branch_name=branch)
         else:
             img = data.get('img')
             self.url_address = \

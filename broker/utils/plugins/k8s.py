@@ -109,7 +109,7 @@ def create_deployment(app_id, app_port, img,
                       devisgx="/dev/isgx", cmd=None, args=None):
 
     kube.config.load_kube_config(api.k8s_conf_path)
-    kube_api = kube.client.AppsV1beta1Api()
+    kube_api = kube.client.AppsV1Api()
 
     obj_meta = kube.client.V1ObjectMeta(
         name=app_id)
@@ -151,12 +151,14 @@ def create_deployment(app_id, app_port, img,
     template = kube.client.V1PodTemplateSpec(
         metadata=kube.client.V1ObjectMeta(labels={"app": app_id}),
         spec=pod_spec)
-    
-    spec = kube.client.AppsV1beta1DeploymentSpec(
+
+    selector = kube.client.V1LabelSelector(match_labels={"app": app_id})    
+    spec = kube.client.V1DeploymentSpec(
         replicas=init_size,
-        template=template)
-    deployment = kube.client.AppsV1beta1Deployment(
-        api_version="apps/v1beta1",
+        template=template,
+        selector=selector)
+    deployment = kube.client.V1Deployment(
+        api_version="apps/v1",
         kind="Deployment",
         metadata=kube.client.V1ObjectMeta(name=app_id),
         spec=spec)
@@ -193,7 +195,7 @@ def create_service(app_id, port):
         print('Creating service...')
         s = kube_api.create_namespaced_service(namespace='default', body=svc_spec)
         node_port = s.spec.ports[0].node_port
-        node_ip = s.spec.cluster_ip
+        node_ip = api.get_node_cluster(api.k8s_conf_path)
 
         return node_ip, node_port
     
@@ -217,6 +219,37 @@ def wait_application_ready(url):
         except Exception:
             print('Trying connect to app again...')
             time.sleep(2)
+    print('Application is ready!')
+
+
+def create_horizontal_pod_autoscaler(app_id):
+
+    kube_api = kube.client.AutoscalingV2beta2Api()
+
+    metric = kube.client.V2beta2MetricIdentifier(name='packets-per-second')
+    target = kube.client.V2beta2MetricTarget(type='AverageValue', average_value='1k')
+    
+    pods = kube.client.V2beta2PodsMetricSource(metric=metric, target=target)
+    
+    metrics = [kube.client.V2beta2MetricSpec(pods=pods, type='Pods')]
+
+    scale_target_ref = kube.client.V2beta2CrossVersionObjectReference(kind='Deployment', name=app_id)
+    
+    spec = kube.client.V2beta2HorizontalPodAutoscalerSpec(metrics=metrics, max_replicas=5, scale_target_ref=scale_target_ref)
+
+    body_metadata = kube.client.V1ObjectMeta(name=app_id, namespace='default')
+
+    conditions = [kube.client.V2beta2HorizontalPodAutoscalerCondition(type='ScalingActive', status='Unknown')]
+
+    status = kube.client.V2beta2HorizontalPodAutoscalerStatus(current_replicas=1, desired_replicas=1, conditions=conditions)
+
+    body = kube.client.V2beta2HorizontalPodAutoscaler(spec=spec, status=status, metadata=body_metadata)
+
+    a = kube_api.create_namespaced_horizontal_pod_autoscaler(namespace='default', body=body)
+
+
+
+
         
 def deploy_app_from_image(app_id, app_port, img, init_size, env_vars):
     
@@ -224,56 +257,24 @@ def deploy_app_from_image(app_id, app_port, img, init_size, env_vars):
     wait_deployment_ready(app_id)
     node_ip, node_port = create_service(app_id, app_port)
     url = "http://{}:{}".format(node_ip, node_port)
+    create_horizontal_pod_autoscaler(app_id)
     wait_application_ready(url)
+
 
     return url
 
-def terminate_app(app_id):
-        print("terminating submission {}...".format(app_id))
-        kube.config.load_kube_config(api.k8s_conf_path)
-        ## Deleting deployment
-        kube_api = kube.client.AppsV1Api()
-        kube_api.delete_namespaced_deployment(
-        name=app_id,
-        namespace="default",
-        body=kube.client.V1DeleteOptions(
-            propagation_policy='Foreground',
-            grace_period_seconds=5))
-        print("{} deployment deleted...".format(app_id))
-        ## Deleting service.
-        kube_api = kube.client.CoreV1Api()
-        kube_api.delete_namespaced_service(
-        name=app_id,
-        namespace="default",
-        body=kube.client.V1DeleteOptions(
-            propagation_policy='Foreground',
-            grace_period_seconds=5))
-        print("{} service deleted...".format(app_id))
-
-
-def update_app(app_id, replicas):
-    print("updating submission {} to {} replicas...".format(app_id, replicas))
-    kube.config.load_kube_config(api.k8s_conf_path)
-    kube_api = kube.client.AppsV1Api()
-    deployment = kube_api.read_namespaced_deployment(name=app_id, namespace='default')
-    deployment.spec.replicas = replicas
-    api_response = kube_api.patch_namespaced_deployment(
-        name=app_id,
-        namespace="default",
-        body=deployment)
-    print("updated {} successfuly...".format(app_id))
-    return "stopped"
-
-def deploy_app_from_git(app_id, app_port, git_address, init_size, env_vars):
-    
+def deploy_app_from_git(app_id, app_port, git_address,
+                        init_size, env_vars, branch_name='master'):
+    # TODO: Generate generic img with git and common modules ready.
     img = 'ubuntu'
     cmd = ["/bin/bash","-c"]
-    args = ['apt update -y && apt install git -y && git clone {} application && cd application && ./run.sh'.format(git_address)]
+    args = ['apt update -y && apt install git -y && git clone {} application && cd application && git checkout {} && bash run.sh'.format(git_address, branch_name)]
 
     create_deployment(app_id, app_port, img, init_size, env_vars, cmd=cmd, args=args)
     wait_deployment_ready(app_id)
     node_ip, node_port = create_service(app_id, app_port)
     url = "http://{}:{}".format(node_ip, node_port)
+    create_horizontal_pod_autoscaler(app_id)
     wait_application_ready(url)
 
     return url
